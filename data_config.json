@@ -1,0 +1,80 @@
+{
+    "categories_dict": {
+        "简体中文": [
+            "汽车配件与轮胎 (Auto Parts & Tires)",
+            "办公及家用桌椅 (Office & Home Furniture)",
+            "塑料制品与日用杂货 (Plastic Ware & Daily Sundries)",
+            "家用电器 (Home Appliances)",
+            "五金与建材工具 (Hardware & Building Materials)",
+            "其他杂品清仓 (Other Clearing Items)",
+            "女装服饰",
+            "安全帽"
+        ],
+        "English": [
+            "Auto Parts & Tires",
+            "Office & Home Furniture",
+            "Plastic Ware & Daily Sundries",
+            "Home Appliances",
+            "Hardware & Building Materials",
+            "Other Clearance Items",
+            "women's clothing",
+            "helmet"
+        ],
+        "Nigerian Pidgin": [
+            "Tyres & Auto Parts",
+            "Office & Home Chairs/Tables",
+            "Plastics & House Sundries",
+            "Home Appliances",
+            "Hardware & Building tools",
+            "Other Clearance Cargo",
+            "women's clothing",
+            "helmet"
+        ]
+    },
+    "points_dict": {
+        "简体中文": [
+            "货到付款 (Cash on Delivery / COD)",
+            "拉各斯本土仓库现场看货/自提 (Lagos Warehouse Pick-up)",
+            "源头清仓超低价 (Direct Importer Wholesale Price)",
+            "集装箱刚刚到港 (Fresh Container Landing)",
+            "极致坚固耐用 (Heavy Duty & Super Durable)",
+            "库存告急先到先得 (Limited Stock, First Come First Served)"
+        ],
+        "English": [
+            "Cash on Delivery / COD",
+            "Lagos Warehouse Self-Pickup",
+            "Direct Importer Price",
+            "Fresh Container Landing",
+            "Super Durable / Heavy Duty",
+            "Limited Stock / First Come First Served"
+        ],
+        "Nigerian Pidgin": [
+            "Cash on Delivery (COD) allowed",
+            "Lagos warehouse pickup sharp-sharp",
+            "Direct Importer wholesale price",
+            "Container just land now-now",
+            "Na double quality - solid scatter",
+            "First come first serve - Stock dey clear"
+        ]
+    },
+    "points_defaults": {
+        "简体中文": [
+            "货到付款 (Cash on Delivery / COD)",
+            "拉各斯本土仓库现场看货/自提 (Lagos Warehouse Pick-up)",
+            "源头清仓超低价 (Direct Importer Wholesale Price)",
+            "极致坚固耐用 (Heavy Duty & Super Durable)"
+        ],
+        "English": [
+            "Cash on Delivery / COD",
+            "Lagos Warehouse Self-Pickup",
+            "Direct Importer Price",
+            "Super Durable / Heavy Duty"
+        ],
+        "Nigerian Pidgin": [
+            "Cash on Delivery (COD) allowed",
+            "Lagos warehouse pickup sharp-sharp",
+            "Direct Importer wholesale price",
+            "Na double quality - solid scatter"
+        ]
+    }
+}
