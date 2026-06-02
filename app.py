@@ -551,6 +551,10 @@ if "processed_image_bytes" not in st.session_state:
     st.session_state.processed_image_bytes = None
 if "rebuilt_script" not in st.session_state:
     st.session_state.rebuilt_script = ""
+if "rebuilt_script_zh" not in st.session_state:
+    st.session_state.rebuilt_script_zh = ""
+if "rebuilt_script_en" not in st.session_state:
+    st.session_state.rebuilt_script_en = ""
 if "campaign_plan" not in st.session_state:
     st.session_state.campaign_plan = ""
 
@@ -562,10 +566,25 @@ if "t4_show_link" not in st.session_state:
     st.session_state.t4_show_link = False
 if "t4_show_upload" not in st.session_state:
     st.session_state.t4_show_upload = False
+if "t4_show_product_images" not in st.session_state:
+    st.session_state.t4_show_product_images = False
 if "t4_chat_history" not in st.session_state:
     st.session_state.t4_chat_history = []
 if "t4_video_title" not in st.session_state:
     st.session_state.t4_video_title = ""
+if "t4_input_visual_replicate" not in st.session_state:
+    st.session_state.t4_input_visual_replicate = """我要复刻参考视频的运镜方式和节奏，不复制原产品。
+请拆解参考视频的镜头、机位、动作、剪辑节奏，再改成我的产品拍摄分镜。"""
+if "t4_scene" not in st.session_state:
+    st.session_state.t4_scene = "Restaurant bar wooden table, warm indoor lighting"
+if "t4_target_seconds" not in st.session_state:
+    st.session_state.t4_target_seconds = 10
+if "t4_video_analysis" not in st.session_state:
+    st.session_state.t4_video_analysis = None
+if "t4_video_montage_b64" not in st.session_state:
+    st.session_state.t4_video_montage_b64 = ""
+if "t4_output_lang" not in st.session_state:
+    st.session_state.t4_output_lang = sys_lang
 if "t4_input_analyze" not in st.session_state or "塑料椅子" in st.session_state.t4_input_analyze:
     st.session_state.t4_input_analyze = "从这个视频中提取完整的文本脚本，包括对话、旁白以及所有文字字幕："
 if "t4_input_replicate" not in st.session_state or "大理石茶几" in st.session_state.t4_input_replicate:
@@ -584,6 +603,51 @@ if "t4_main_input" not in st.session_state or "塑料椅子" in st.session_state
         st.session_state.t4_main_input = st.session_state.t4_input_replicate
     else:
         st.session_state.t4_main_input = st.session_state.t4_input_analyze
+
+T4_DEFAULT_INPUTS = {
+    "简体中文": {
+        "create": """我希望创作的视频类型：UGC种草
+我的目标客群：尼日利亚的日常消费者
+我的商品名称：
+我的商品卖点：
+我倾向的视频风格：""",
+        "replicate": "复刻这个视频的画面细节，包括画面构图、色彩、光影等：",
+        "analyze": "从这个视频中提取完整的文本脚本，包括对话、旁白以及所有文字字幕：",
+        "visual_replicate": """我要复刻参考视频的运镜方式和节奏，不复制原产品。
+请拆解参考视频的镜头、机位、动作、剪辑节奏，再改成我的产品拍摄分镜。""",
+    },
+    "English": {
+        "create": """Video type I want to create: UGC product recommendation
+Target audience: everyday Nigerian consumers
+Product name:
+Product selling points:
+Preferred video style:""",
+        "replicate": "Replicate this video's visual style, including composition, color, lighting, pacing, and camera movement:",
+        "analyze": "Extract the full script from this video, including dialogue, narration, and all on-screen subtitles:",
+        "visual_replicate": """I want to copy only the reference video's camera movement and editing rhythm, not its original product.
+Break down the reference video's shots, camera positions, actions, and cut rhythm, then turn it into a storyboard for my own product.""",
+    },
+    "Nigerian Pidgin": {
+        "create": """Video type wey I wan create: UGC product recommendation
+Target people: everyday Nigerian buyers
+Product name:
+Main selling points:
+Video style wey I want:""",
+        "replicate": "Copy only this video's visual style: framing, color, light, pacing, and camera movement:",
+        "analyze": "Bring out the full script from this video, including talk, voiceover, and every subtitle wey show for screen:",
+        "visual_replicate": """I wan copy only the reference video's camera movement and editing rhythm, no copy the original product.
+Break down the shots, camera position, action, and cut rhythm, then turn am to storyboard for my own product.""",
+    },
+}
+
+if st.session_state.get("last_sys_lang") != sys_lang:
+    defaults = T4_DEFAULT_INPUTS[sys_lang]
+    st.session_state.t4_input_create = defaults["create"]
+    st.session_state.t4_input_replicate = defaults["replicate"]
+    st.session_state.t4_input_analyze = defaults["analyze"]
+    st.session_state.t4_input_visual_replicate = defaults["visual_replicate"]
+    st.session_state.t4_main_input = defaults.get(st.session_state.get("t4_mode", "create"), defaults["create"])
+    st.session_state.last_sys_lang = sys_lang
 
 if "status_message" not in st.session_state:
     st.session_state.status_message = None
@@ -1853,6 +1917,86 @@ def call_llm(system_prompt, user_prompt, mock_func):
     except Exception as e:
         st.error(f"AI API Error: {e}")
         return mock_func()
+
+def _image_to_data_url(image_source, max_size=(1024, 1024)):
+    try:
+        if isinstance(image_source, Image.Image):
+            image = image_source.convert("RGB")
+        else:
+            image = Image.open(image_source).convert("RGB")
+        image.thumbnail(max_size)
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG", quality=86)
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{img_str}"
+    except Exception:
+        return ""
+
+def call_llm_with_images(system_prompt, user_prompt, image_sources, mock_func):
+    if not openai_api_key:
+        return mock_func()
+    valid_images = []
+    for image_source in image_sources or []:
+        data_url = _image_to_data_url(image_source)
+        if data_url:
+            valid_images.append(data_url)
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=openai_api_key, base_url=openai_base_url)
+        content_parts = [{"type": "text", "text": user_prompt}]
+        for data_url in valid_images[:8]:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": data_url}
+            })
+        response = client.chat.completions.create(
+            model=openai_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content_parts}
+            ],
+            temperature=0.7,
+            stream=True
+        )
+        content = ""
+        for chunk in response:
+            if hasattr(chunk, "choices") and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    content += delta.content
+        return content if content else mock_func()
+    except Exception as e:
+        st.error(f"AI Vision API Error: {e}")
+        return mock_func()
+
+def split_bilingual_script(content):
+    if not content:
+        return "", ""
+    zh_markers = ["[[ZH]]", "【中文】", "### 中文", "# 中文"]
+    en_markers = ["[[EN]]", "【ENGLISH】", "### English", "# English"]
+    zh_pos = -1
+    zh_marker = ""
+    en_pos = -1
+    en_marker = ""
+    for marker in zh_markers:
+        pos = content.find(marker)
+        if pos >= 0 and (zh_pos < 0 or pos < zh_pos):
+            zh_pos = pos
+            zh_marker = marker
+    for marker in en_markers:
+        pos = content.find(marker)
+        if pos >= 0 and (en_pos < 0 or pos < en_pos):
+            en_pos = pos
+            en_marker = marker
+    if zh_pos >= 0 and en_pos >= 0:
+        if zh_pos < en_pos:
+            zh = content[zh_pos + len(zh_marker):en_pos].strip()
+            en = content[en_pos + len(en_marker):].strip()
+        else:
+            en = content[en_pos + len(en_marker):zh_pos].strip()
+            zh = content[zh_pos + len(zh_marker):].strip()
+        return zh, en
+    return content.strip(), ""
 
 def translate_text(text, target_lang):
     """
@@ -3611,30 +3755,141 @@ if st.session_state.current_page == "sop":
 # ---------------------------------------------------------
 if st.session_state.current_page == "video":
     # Multi-language definitions for Creatok style interface
-    if sys_lang == "简体中文":
-        t4_center_title = "分析、复刻或生成爆款带货视频"
-        t4_center_desc = "在下方输入中文原版配音、链接或核心卖点，AI 将为您拆解并重写为适配西非市场的魔性短视频脚本"
-        t4_label_upload = "上传视频"
-        t4_label_link = "添加链接"
-        t4_label_run = "开始 AI 重构"
-        t4_history_title = "会话历史"
-        t4_chat_placeholder = "向我提问任何与视频相关的问题..."
-    elif sys_lang == "English":
-        t4_center_title = "Analyze, Replicate or Generate Viral Videos"
-        t4_center_desc = "Input Chinese voiceover transcript, video link, or product details below. AI will reconstruct it into high-converting West African video storyboards."
-        t4_label_upload = "Upload Video"
-        t4_label_link = "Add Link"
-        t4_label_run = "Start AI Rebuilder"
-        t4_history_title = "Session History"
-        t4_chat_placeholder = "Ask me any question related to this video..."
-    else: # Pidgin
-        t4_center_title = "Analyze, Replicate or Make Viral Videos"
-        t4_center_desc = "Put your video transcript or product info below. Make AI rebuild standard West African video scripts sharp-sharp."
-        t4_label_upload = "Upload Video"
-        t4_label_link = "Add Link"
-        t4_label_run = "Start AI Rebuilder"
-        t4_history_title = "Session History"
-        t4_chat_placeholder = "Ask me any question related to dis video..."
+    T4_UI = {
+        "简体中文": {
+            "center_title": "分析、复刻或生成爆款带货视频",
+            "center_desc": "上传参考视频、产品图片或输入核心卖点，AI 会拆解运镜逻辑并生成适合您产品的拍摄分镜。",
+            "offer_config": "商品与报价配置（独立功能）",
+            "create": "创作爆款",
+            "replicate": "复刻爆款",
+            "analyze": "分析脚本",
+            "visual": "视频拆解复刻",
+            "upload": "上传视频",
+            "uploaded": "视频已上传",
+            "link": "添加链接",
+            "link_added": "链接已添加",
+            "images": "产品图片",
+            "images_open": "产品图已打开",
+            "run": "开始 AI 重构",
+            "video_url": "视频链接",
+            "upload_video": "上传短视频文件",
+            "upload_images": "上传自己的产品图片",
+            "scene": "拍摄场景",
+            "target_seconds": "目标秒数",
+            "script_label": "视频脚本 / 产品信息",
+            "create_placeholder": "输入您的商品卖点...",
+            "replicate_placeholder": "输入您想复刻的视频描述或脚本配音内容...",
+            "analyze_placeholder": "粘贴您想分析的中文原版文案...",
+            "visual_placeholder": "说明你想保留的运镜逻辑，以及你的产品/套餐/场景要求...",
+            "extracting": "正在抽帧拆解上传视频...",
+            "url_processing": "正在解析视频链接元数据及音频轨道...",
+            "thinking": "AI 正在拆解并生成拍摄分镜...",
+            "keyframes": "上传视频关键帧拆解",
+            "keyframes_caption": "参考视频关键帧",
+            "storyboard": "分镜脚本",
+            "assistant": "AI 剧本协同设计助理",
+            "chat_placeholder": "向我提问任何与视频相关的问题...",
+            "system_status": "系统提示",
+            "generated_msg": "已为您生成 **{product}** 的拍摄分镜与结构拆解。\n\n{status}\n\n您可以在下方直接发送调整指令继续修改。",
+            "no_video": "未检测到上传参考视频。请上传视频以进行视觉拆解；当前先按文本和产品图片生成。",
+            "video_error": "上传视频拆解失败: {error}。已降级为使用文本和产品图片生成。",
+            "audio_unsupported": "当前 API Key 代理不支持语音转文字 (whisper-1)。已自动降级为使用视频标题及描述元数据进行重构。",
+            "audio_missing": "未能成功下载视频音频轨道。已自动降级为使用视频标题及描述元数据进行重构。",
+            "url_error": "视频解析错误: {error}。已使用您粘贴的文本进行重构。",
+            "output_language": "简体中文",
+        },
+        "English": {
+            "center_title": "Analyze, Replicate or Generate Viral Videos",
+            "center_desc": "Upload a reference video, product images, or product details. AI will break down the filming logic and generate a storyboard for your own product.",
+            "offer_config": "Product & Offer Config",
+            "create": "Create",
+            "replicate": "Replicate",
+            "analyze": "Analyze Script",
+            "visual": "Video Breakdown",
+            "upload": "Upload Video",
+            "uploaded": "Video Uploaded",
+            "link": "Add Link",
+            "link_added": "Link Added",
+            "images": "Product Images",
+            "images_open": "Product Images Open",
+            "run": "Start AI Rebuilder",
+            "video_url": "Video URL",
+            "upload_video": "Upload Short Video File",
+            "upload_images": "Upload Your Product Images",
+            "scene": "Shooting Scene",
+            "target_seconds": "Target Seconds",
+            "script_label": "Video Script / Product Info",
+            "create_placeholder": "Enter product selling points...",
+            "replicate_placeholder": "Enter the video description or voiceover you want to replicate...",
+            "analyze_placeholder": "Paste the original script you want to analyze...",
+            "visual_placeholder": "Describe the camera logic to keep and your product/package/scene requirements...",
+            "extracting": "Extracting frames and camera rhythm from uploaded video...",
+            "url_processing": "Analyzing video URL metadata and audio track...",
+            "thinking": "AI is breaking down the video and generating the storyboard...",
+            "keyframes": "Uploaded Video Keyframes",
+            "keyframes_caption": "Reference video keyframes",
+            "storyboard": "Video Storyboard",
+            "assistant": "AI Script Design Assistant",
+            "chat_placeholder": "Ask me any question related to this video...",
+            "system_status": "System Status",
+            "generated_msg": "Here is the video structure breakdown and storyboard for **{product}**.\n\n{status}\n\nYou can ask me to modify any part of it below.",
+            "no_video": "No uploaded reference video found. Please upload a video for visual breakdown; generating from text/product images for now.",
+            "video_error": "Uploaded video analysis error: {error}. Rebuilding using text and product images only.",
+            "audio_unsupported": "Speech-to-text API (whisper-1) is not supported on this API key proxy. Rebuilding using video title and description metadata instead.",
+            "audio_missing": "Could not download video audio. Rebuilding using video title and description metadata instead.",
+            "url_error": "Video processing error: {error}. Rebuilding using pasted text details instead.",
+            "output_language": "English",
+        },
+        "Nigerian Pidgin": {
+            "center_title": "Analyze, Copy or Make Viral Videos",
+            "center_desc": "Upload reference video, product pictures, or product details. AI go break down the camera style and make storyboard for your own product.",
+            "offer_config": "Product & Offer Setup",
+            "create": "Create New",
+            "replicate": "Copy Style",
+            "analyze": "Analyze Script",
+            "visual": "Video Breakdown",
+            "upload": "Upload Video",
+            "uploaded": "Video Don Upload",
+            "link": "Add Link",
+            "link_added": "Link Don Add",
+            "images": "Product Pictures",
+            "images_open": "Product Pictures Open",
+            "run": "Start AI Rebuilder",
+            "video_url": "Video Link",
+            "upload_video": "Upload Short Video File",
+            "upload_images": "Upload Your Product Pictures",
+            "scene": "Shooting Scene",
+            "target_seconds": "Target Seconds",
+            "script_label": "Video Script / Product Info",
+            "create_placeholder": "Put your product selling points here...",
+            "replicate_placeholder": "Put the video description or voiceover wey you wan copy...",
+            "analyze_placeholder": "Paste the original script wey you wan analyze...",
+            "visual_placeholder": "Tell AI the camera style to keep and your product/package/scene needs...",
+            "extracting": "AI dey extract frames and camera rhythm from uploaded video...",
+            "url_processing": "AI dey check video link metadata and audio track...",
+            "thinking": "AI dey break down the video and build storyboard...",
+            "keyframes": "Uploaded Video Keyframes",
+            "keyframes_caption": "Reference video keyframes",
+            "storyboard": "Video Storyboard",
+            "assistant": "AI Script Design Assistant",
+            "chat_placeholder": "Ask me any question about dis video...",
+            "system_status": "System Status",
+            "generated_msg": "Here na the video breakdown and storyboard for **{product}**.\n\n{status}\n\nYou fit ask me to change any part below.",
+            "no_video": "No reference video upload yet. Upload video make AI fit break am down; for now AI go use text and product pictures.",
+            "video_error": "Uploaded video analysis get issue: {error}. AI go use text and product pictures only.",
+            "audio_unsupported": "This API key proxy no support speech-to-text (whisper-1). AI go use video title and description metadata instead.",
+            "audio_missing": "Audio download no work. AI go use video title and description metadata instead.",
+            "url_error": "Video processing get issue: {error}. AI go use the text wey you paste instead.",
+            "output_language": "Nigerian Pidgin",
+        },
+    }
+    t4_ui = T4_UI[sys_lang]
+    t4_center_title = t4_ui["center_title"]
+    t4_center_desc = t4_ui["center_desc"]
+    t4_label_upload = t4_ui["upload"]
+    t4_label_link = t4_ui["link"]
+    t4_label_run = t4_ui["run"]
+    t4_chat_placeholder = t4_ui["chat_placeholder"]
 
     # Check which view to display (Console vs Analysis)
     # 1. Title Header (Center aligned)
@@ -3654,7 +3909,7 @@ if st.session_state.current_page == "video":
     # 2. Input Console Container
     with st.container():
         # Product & Offer Config for Tab 4 (Independent from Tab 3)
-        st.markdown(f'<div style="margin-bottom: 12px; font-weight: 600; color: #f8fafc;">📦 ' + ("商品与报价配置 (独立功能)" if sys_lang=="简体中文" else "Product & Offer Config") + '</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="margin-bottom: 12px; font-weight: 600; color: #f8fafc;">📦 {t4_ui["offer_config"]}</div>', unsafe_allow_html=True)
         sc1, sc2, sc3 = st.columns(3)
         with sc1:
             t4_prod = st.text_input(L["t3_active_prod"], value=st.session_state.t4_prod, key="t4_prod_input")
@@ -3668,46 +3923,60 @@ if st.session_state.current_page == "video":
         st.markdown("<hr style='margin: 16px 0; border-color: rgba(255, 255, 255, 0.1);'/>", unsafe_allow_html=True)
         
         # Mode Pills Selector
-        p_col1, p_col2, p_col3, p_col_spacer = st.columns([1.2, 1.2, 1.2, 3])
+        p_col1, p_col2, p_col3, p_col4, p_col_spacer = st.columns([1.2, 1.2, 1.2, 1.45, 2.4])
         with p_col1:
             active_create = (st.session_state.t4_mode == "create")
-            if st.button("🎨 " + ("创作爆款" if sys_lang=="简体中文" else "Create" if sys_lang=="English" else "Create New"), type="primary" if active_create else "secondary", use_container_width=True, key="t4_pill_create"):
+            if st.button("🎨 " + t4_ui["create"], type="primary" if active_create else "secondary", use_container_width=True, key="t4_pill_create"):
                 st.session_state.t4_mode = "create"
-                st.session_state.t4_input_create = """我希望创作的视频类型：[UGC种草/产品口播/产品演示/痛点-解决/前后对比/反应展示/故事讲述]
-我的目标客群：[种族/地区/职业/生理特征等]
-我的商品名称：
-我的商品卖点：
-我倾向的视频风格："""
+                st.session_state.t4_video_analysis = None
+                st.session_state.t4_video_montage_b64 = ""
+                st.session_state.t4_input_create = T4_DEFAULT_INPUTS[sys_lang]["create"]
                 st.session_state.t4_main_input = st.session_state.t4_input_create
                 st.rerun()
         with p_col2:
             active_replicate = (st.session_state.t4_mode == "replicate")
-            if st.button("🔄 " + ("复刻爆款" if sys_lang=="简体中文" else "Replicate" if sys_lang=="English" else "Copy Copy"), type="primary" if active_replicate else "secondary", use_container_width=True, key="t4_pill_replicate"):
+            if st.button("🔄 " + t4_ui["replicate"], type="primary" if active_replicate else "secondary", use_container_width=True, key="t4_pill_replicate"):
                 st.session_state.t4_mode = "replicate"
-                st.session_state.t4_input_replicate = "复刻这个视频的画面细节，包括画面构图、色彩、光影等："
+                st.session_state.t4_video_analysis = None
+                st.session_state.t4_video_montage_b64 = ""
+                st.session_state.t4_input_replicate = T4_DEFAULT_INPUTS[sys_lang]["replicate"]
                 st.session_state.t4_main_input = st.session_state.t4_input_replicate
                 st.rerun()
         with p_col3:
             active_analyze = (st.session_state.t4_mode == "analyze")
-            if st.button("📊 " + ("分析脚本" if sys_lang=="简体中文" else "Analyze Script" if sys_lang=="English" else "Analyze"), type="primary" if active_analyze else "secondary", use_container_width=True, key="t4_pill_analyze"):
+            if st.button("📊 " + t4_ui["analyze"], type="primary" if active_analyze else "secondary", use_container_width=True, key="t4_pill_analyze"):
                 st.session_state.t4_mode = "analyze"
-                st.session_state.t4_input_analyze = "从这个视频中提取完整的文本脚本，包括对话、旁白以及所有文字字幕："
+                st.session_state.t4_video_analysis = None
+                st.session_state.t4_video_montage_b64 = ""
+                st.session_state.t4_input_analyze = T4_DEFAULT_INPUTS[sys_lang]["analyze"]
                 st.session_state.t4_main_input = st.session_state.t4_input_analyze
+                st.rerun()
+        with p_col4:
+            active_visual = (st.session_state.t4_mode == "visual_replicate")
+            if st.button("🎥 " + t4_ui["visual"], type="primary" if active_visual else "secondary", use_container_width=True, key="t4_pill_visual_replicate"):
+                st.session_state.t4_mode = "visual_replicate"
+                st.session_state.t4_input_visual_replicate = T4_DEFAULT_INPUTS[sys_lang]["visual_replicate"]
+                st.session_state.t4_main_input = st.session_state.t4_input_visual_replicate
+                st.session_state.t4_show_upload = True
+                st.session_state.t4_show_product_images = True
                 st.rerun()
         
         # Main Input Text Area
         if st.session_state.t4_mode == "analyze":
-            ta_placeholder = "粘贴您想分析的中文原版文案..." if sys_lang == "简体中文" else "Paste Chinese script here to analyze..."
+            ta_placeholder = t4_ui["analyze_placeholder"]
             ta_value_default = st.session_state.t4_input_analyze
         elif st.session_state.t4_mode == "replicate":
-            ta_placeholder = "输入您想复刻的视频描述或脚本配音内容..." if sys_lang == "简体中文" else "Enter script or video description you want to replicate..."
+            ta_placeholder = t4_ui["replicate_placeholder"]
             ta_value_default = st.session_state.t4_input_replicate
+        elif st.session_state.t4_mode == "visual_replicate":
+            ta_placeholder = t4_ui["visual_placeholder"]
+            ta_value_default = st.session_state.get("t4_input_visual_replicate", "")
         else:
-            ta_placeholder = "输入您的商品卖点..." if sys_lang == "简体中文" else "Enter product selling points to create a script..."
+            ta_placeholder = t4_ui["create_placeholder"]
             ta_value_default = st.session_state.t4_input_create
             
         t4_user_input = st.text_area(
-            label="Video Script / Product Info",
+            label=t4_ui["script_label"],
             placeholder=ta_placeholder,
             value=ta_value_default,
             height=180,
@@ -3720,20 +3989,27 @@ if st.session_state.current_page == "video":
             st.session_state.t4_input_analyze = t4_user_input
         elif st.session_state.t4_mode == "replicate":
             st.session_state.t4_input_replicate = t4_user_input
+        elif st.session_state.t4_mode == "visual_replicate":
+            st.session_state.t4_input_visual_replicate = t4_user_input
         else:
             st.session_state.t4_input_create = t4_user_input
         
         # Action Row (Add Link, Upload, Run)
-        act_col1, act_col2, act_col3 = st.columns([1.2, 1.2, 2])
+        act_col1, act_col2, act_col_img, act_col3 = st.columns([1.2, 1.2, 1.4, 2])
         with act_col1:
-            btn_link_label = "🔗 " + ("链接已添加" if st.session_state.t4_show_link else t4_label_link)
+            btn_link_label = "🔗 " + (t4_ui["link_added"] if st.session_state.t4_show_link else t4_label_link)
             if st.button(btn_link_label, use_container_width=True, key="t4_btn_toggle_link"):
                 st.session_state.t4_show_link = not st.session_state.t4_show_link
                 st.rerun()
         with act_col2:
-            btn_upload_label = "📤 " + ("视频已上传" if st.session_state.t4_show_upload else t4_label_upload)
+            btn_upload_label = "📤 " + (t4_ui["uploaded"] if st.session_state.t4_show_upload else t4_label_upload)
             if st.button(btn_upload_label, use_container_width=True, key="t4_btn_toggle_upload"):
                 st.session_state.t4_show_upload = not st.session_state.t4_show_upload
+                st.rerun()
+        with act_col_img:
+            btn_img_label = "🖼️ " + (t4_ui["images_open"] if st.session_state.t4_show_product_images else t4_ui["images"])
+            if st.button(btn_img_label, use_container_width=True, key="t4_btn_toggle_product_images"):
+                st.session_state.t4_show_product_images = not st.session_state.t4_show_product_images
                 st.rerun()
         with act_col3:
             run_rebuild = st.button("🚀 " + t4_label_run, type="primary", use_container_width=True, key="t4_btn_rebuild_submit")
@@ -3741,16 +4017,45 @@ if st.session_state.current_page == "video":
         # Dynamic Inputs below row
         if st.session_state.t4_show_link:
             st.text_input(
-                "🔗 Video URL / 视频链接", 
+                "🔗 " + t4_ui["video_url"], 
                 value="", 
                 key="t4_link_in_dyn"
             )
         if st.session_state.t4_show_upload:
-            st.file_uploader(
-                "📤 Upload Video / 上传短视频文件", 
+            t4_uploaded_video = st.file_uploader(
+                "📤 " + t4_ui["upload_video"], 
                 type=["mp4", "mov", "avi"], 
                 key="t4_upload_in_dyn"
             )
+        else:
+            t4_uploaded_video = None
+        if st.session_state.t4_mode == "visual_replicate":
+            vc1, vc2 = st.columns([1.4, 1])
+            with vc1:
+                t4_scene = st.text_input(
+                    "🎬 " + t4_ui["scene"],
+                    value=st.session_state.t4_scene,
+                    key="t4_scene_input"
+                )
+                st.session_state.t4_scene = t4_scene
+            with vc2:
+                t4_target_seconds = st.number_input(
+                    "⏱️ " + t4_ui["target_seconds"],
+                    min_value=3,
+                    max_value=120,
+                    value=int(st.session_state.t4_target_seconds),
+                    key="t4_target_seconds_input"
+                )
+                st.session_state.t4_target_seconds = int(t4_target_seconds)
+        if st.session_state.t4_show_product_images:
+            t4_product_images = st.file_uploader(
+                "🖼️ " + t4_ui["upload_images"],
+                type=["jpg", "jpeg", "png", "webp"],
+                accept_multiple_files=True,
+                key="t4_product_images_dyn"
+            )
+        else:
+            t4_product_images = []
         
     # Rebuild submit logic
     if run_rebuild:
@@ -3760,9 +4065,36 @@ if st.session_state.current_page == "video":
         video_url = st.session_state.get("t4_link_in_dyn", "").strip()
         extracted_script_context = t4_user_input
         status_info = ""
+        vision_images = []
+        product_image_context = ""
+        uploaded_video_obj = st.session_state.get("t4_upload_in_dyn")
+        product_image_objs = st.session_state.get("t4_product_images_dyn") or []
+        if product_image_objs:
+            product_names = ", ".join([img.name for img in product_image_objs])
+            product_image_context = f"\nUploaded Product Images: {len(product_image_objs)} file(s): {product_names}\nUse these images to identify the user's real product/menu items, plating, colors, materials, and visual selling points.\n"
+            vision_images.extend(product_image_objs[:5])
+        
+        if st.session_state.t4_mode == "visual_replicate" and uploaded_video_obj:
+            with st.spinner(t4_ui["extracting"]):
+                try:
+                    import video_processor
+                    local_video_path = video_processor.save_uploaded_video(uploaded_video_obj)
+                    visual_analysis = video_processor.analyze_local_video(local_video_path)
+                    st.session_state.t4_video_analysis = visual_analysis
+                    montage_img = visual_analysis.get("montage_image")
+                    st.session_state.t4_video_montage_b64 = get_base64_image(montage_img)
+                    vision_images.insert(0, montage_img)
+                    extracted_script_context = f"{t4_user_input}\n\n{visual_analysis.get('prompt_context', '')}{product_image_context}"
+                    status_info = f"Uploaded video analyzed: {visual_analysis.get('duration')}s, {visual_analysis.get('estimated_shots')} estimated shots, {visual_analysis.get('rhythm')} rhythm."
+                except Exception as proc_err:
+                    status_info = t4_ui["video_error"].format(error=proc_err)
+                    extracted_script_context = f"{t4_user_input}\n{product_image_context}"
+        elif st.session_state.t4_mode == "visual_replicate":
+            status_info = t4_ui["no_video"]
+            extracted_script_context = f"{t4_user_input}\n{product_image_context}"
         
         if st.session_state.t4_show_link and video_url:
-            with st.spinner("AI is analyzing video URL metadata & audio track..." if sys_lang != "简体中文" else "AI 正在解析视频 URL 及音频轨道..."):
+            with st.spinner(t4_ui["url_processing"]):
                 try:
                     import video_processor
                     
@@ -3784,9 +4116,9 @@ if st.session_state.current_page == "video":
                             if os.path.exists(audio_path):
                                 os.remove(audio_path)
                         except Exception as whisper_err:
-                            status_info = "Speech-to-text API (whisper-1) is not supported on this API key proxy. Rebuilding using video title & description metadata instead." if sys_lang != "简体中文" else "当前 API Key 代理不支持语音转文字 (whisper-1)。已自动降级为使用视频标题及描述元数据进行重构。"
+                            status_info = t4_ui["audio_unsupported"]
                     else:
-                        status_info = "Could not download video audio. Rebuilding using video title & description metadata instead." if sys_lang != "简体中文" else "未能成功下载视频音频轨道。已自动降级为使用视频标题及描述元数据进行重构。"
+                        status_info = t4_ui["audio_missing"]
                     
                     # Combine context
                     if transcript:
@@ -3794,23 +4126,124 @@ if st.session_state.current_page == "video":
                     elif meta_text:
                         extracted_script_context = f"Video Metadata (No Transcript):\n{meta_text}\n\nAdditional Input Context:\n{t4_user_input}"
                 except Exception as proc_err:
-                    status_info = f"Video processing error: {proc_err}. Rebuilding using pasted text details instead." if sys_lang != "简体中文" else f"视频解析错误: {proc_err}。已使用您粘贴的文本进行重构。"
+                    status_info = t4_ui["url_error"].format(error=proc_err)
         
-        system_prompt_script = """You are a highly talented West African video director and TikTok/Reels advertising copywriter.
-Your task is to take a Chinese short video transcript, text description, or metadata details, analyze its viral hook structure, and rewrite it into a localized high-converting short video script in English for the West African (Nigerian) market.
+        if st.session_state.t4_mode == "visual_replicate":
+            visual_format = {
+                "简体中文": """# 1. 原视频运镜拆解
+- 总时长、节奏、镜头数量估算
+- 镜头语言：低机位/俯拍/横移/前推/后拉/硬切等
+- 画面逻辑：主体如何出现、如何分批上桌、如何制造食欲或购买欲
+
+# 2. 可迁移拍摄逻辑
+用 5-8 条说明哪些部分可以迁移到新产品，哪些部分不要复制。
+
+# 3. 定制拍摄分镜脚本
+用 Markdown 表格输出，必须适配用户目标秒数。
+表格列：
+| 时间 | 画面内容 | 运镜方式 | 动作/上菜节奏 | 拍摄重点 |
+
+# 4. 可直接复制给视频 Agent 的提示词
+写成一个完整 prompt，包含画幅、时长、场景、产品、分批出现顺序、运镜、剪辑节奏、禁止项。""",
+                "English": """# 1. Reference Video Camera Breakdown
+- Total duration, rhythm, estimated shot count
+- Camera language: low angle, overhead shot, side sweep, push-in, pull-back, hard cuts
+- Visual logic: how the subject appears, how items enter in batches, how desire is created
+
+# 2. Transferable Shooting Logic
+Use 5-8 bullets to explain what should transfer to the new product and what must not be copied.
+
+# 3. Custom Shooting Storyboard
+Use a Markdown table and match the user's target duration.
+Table columns:
+| Time | Visual Content | Camera Movement | Action / Serving Rhythm | Shooting Focus |
+
+# 4. Copy-Ready Prompt for Video Agent
+Write one complete prompt including aspect ratio, duration, scene, product, batch-by-batch order, camera movement, cut rhythm, and negative instructions.""",
+                "Nigerian Pidgin": """# 1. Reference Video Camera Breakdown
+- Total time, rhythm, estimated shot count
+- Camera style: low angle, top shot, side sweep, push-in, pull-back, hard cuts
+- Visual logic: how product enter, how items show batch by batch, how e take make person want am
+
+# 2. Shooting Logic Wey Fit Transfer
+Use 5-8 bullets explain wetin fit transfer to the new product and wetin no suppose copy.
+
+# 3. Custom Shooting Storyboard
+Use Markdown table and match the target seconds.
+Table columns:
+| Time | Visual Content | Camera Movement | Action / Serving Rhythm | Shooting Focus |
+
+# 4. Prompt Wey Fit Copy Give Video Agent
+Write one complete prompt with aspect ratio, duration, scene, product, batch-by-batch order, camera movement, cut rhythm, and things wey no suppose show.""",
+            }[sys_lang]
+            bilingual_visual_format = """For BOTH language versions, use the same structure:
+
+Chinese version structure:
+# 1. 原视频运镜拆解
+# 2. 可迁移拍摄逻辑
+# 3. 定制拍摄分镜脚本
+| 时间 | 画面内容 | 运镜方式 | 动作/上菜节奏 | 拍摄重点 |
+# 4. 可直接复制给视频 Agent 的提示词
+
+English version structure:
+# 1. Reference Video Camera Breakdown
+# 2. Transferable Shooting Logic
+# 3. Custom Shooting Storyboard
+| Time | Visual Content | Camera Movement | Action / Serving Rhythm | Shooting Focus |
+# 4. Copy-Ready Prompt for Video Agent"""
+            system_prompt_script = f"""You are a senior short-video director and visual storyboard strategist.
+You specialize in decomposing reference videos into reusable filming logic, then adapting that logic to a user's own products, images, scene, and target duration.
+
+Your job:
+1. Analyze the uploaded reference video evidence: keyframe montage, duration, cut timestamps, camera rhythm, composition, staging, object-entry timing, hand/action rhythm, and ending structure.
+2. Do NOT copy the original product, location, brand, UI, subtitle overlay, or exact subject. Copy only the reusable camera movement and editing logic.
+3. Use the user's uploaded product images and product details to create a custom shooting storyboard.
+4. Generate BOTH Chinese and English in ONE response.
+5. Keep the result practical enough for a video generation agent or a real camera operator.
+
+CRITICAL OUTPUT FORMAT:
+- Start the Chinese version with exactly: [[ZH]]
+- Start the English version with exactly: [[EN]]
+- Do not put any text before [[ZH]].
+- Do not omit either version.
+- The two versions must contain the same shot logic, timing, and structure.
+
+Required structure:
+{bilingual_visual_format}
+"""
+            user_prompt_script = f"""
+Reference Video / User Instruction:
+{extracted_script_context}
+
+User's Target Product and Scene:
+- Product/Menu Name: {st.session_state.t4_prod}
+- Target Duration: {st.session_state.t4_target_seconds} seconds
+- Target Scene: {st.session_state.t4_scene}
+- Price/Offer: {st.session_state.t4_price} NGN
+- MOQ/Quantity: {st.session_state.t4_moq}
+- Contact: {watermark_phone}
+
+Please generate a custom bilingual shooting breakdown that transfers the reference video's camera movement logic to the user's own product/images.
+"""
+        else:
+            system_prompt_script = f"""You are a highly talented West African video director and TikTok/Reels advertising copywriter.
+Your task is to take a short video transcript, text description, or metadata details, analyze its viral hook structure, and rewrite it into a localized high-converting short video script for the West African (Nigerian) market.
 
 CRITICAL CONSTRAINTS:
-1. You MUST NOT use any Chinese characters in your entire response (including structural analysis, descriptions, and storyboard). Use English exclusively. Not even one word of Chinese is allowed in the output.
+1. Generate BOTH Chinese and English in ONE response.
 2. If the target product specifies 0 main images or no assets, make sure the visual descriptions and script flow accommodate this safely.
+3. Start the Chinese version with exactly: [[ZH]]
+4. Start the English version with exactly: [[EN]]
+5. Do not put any text before [[ZH]]. Do not omit either version.
 
-You must structure your response exactly into two parts:
+For BOTH language versions, use this structure:
 
-# Part 1: Viral Structure Analysis
+# Part 1 / 第 1 部分: Viral Structure Analysis / 爆款结构分析
 - **Hook Strategy (First 3s)**: Explain the hook design and why it grabs attention.
 - **Core Narrative Structure (Problem -> Agitation -> Solution -> CTA)**: Breakdown the narrative sequence.
 - **Emotional Triggers**: List the primary psychological and emotional triggers.
 
-# Part 2: Localized Shooting Storyboard
+# Part 2 / 第 2 部分: Localized Shooting Storyboard / 本地化拍摄分镜
 Provide a markdown table detailing the visual camera shots (Visual & Camera), the English spoken dialogue (Dialogue / Audio) in local high-energy Nigerian English tone, and action directions for the actor (Action & Tone).
 
 Format the storyboard strictly as a Markdown table:
@@ -3821,7 +4254,7 @@ Format the storyboard strictly as a Markdown table:
 | **CTA (16-30s)** | ... | ... | ... |
 """
 
-        user_prompt_script = f"""
+            user_prompt_script = f"""
 Original Video Script/Details:
 {extracted_script_context}
 
@@ -3832,20 +4265,83 @@ Target Wholesale Product details:
 - Pickup Warehouse: {lagos_address}
 - WhatsApp Contact: {watermark_phone}
 
-Please write the localized script storyboard based on the target product details. Output strictly in English.
+Please write the localized bilingual script storyboard based on the target product details.
 """
-        with st.spinner("AI is translating and rebuilding script..." if sys_lang != "简体中文" else "AI 正在拆解并重构西非魔性短视频脚本..."):
-            response_script = call_llm(
-                system_prompt_script,
-                user_prompt_script,
-                lambda: get_mock_video_script(t4_user_input, st.session_state.t4_prod, st.session_state.t4_price, watermark_phone, lagos_address)
-            )
+        with st.spinner(t4_ui["thinking"]):
+            if st.session_state.t4_mode == "visual_replicate":
+                response_script = call_llm_with_images(
+                    system_prompt_script,
+                    user_prompt_script,
+                    vision_images,
+                    lambda: f"""[[ZH]]
+# 1. 原视频运镜拆解
+- 节奏：短视频快切，重点是贴近主体、分批出现、最后满桌展示。
+- 镜头：低机位贴桌前推、横向扫桌、俯拍下压、末尾后拉展示完整产品。
+
+# 2. 可迁移拍摄逻辑
+- 保留手持轻微晃动和硬切节奏。
+- 保留产品从画外分批进入桌面的方式。
+- 不复制原视频的产品、场景和平台 UI。
+
+# 3. 定制拍摄分镜脚本
+| 时间 | 画面内容 | 运镜方式 | 动作/上菜节奏 | 拍摄重点 |
+| :--- | :--- | :--- | :--- | :--- |
+| 0-2s | 空桌或半空桌，先放入主饮品/主产品 | 低机位贴桌前推 | 服务员手从画外放入第一批产品 | 建立场景和第一眼吸引 |
+| 2-4s | 第二批产品补充到桌面 | 横向扫桌 | 从左到右依次上菜 | 强调“越来越丰富” |
+| 4-7s | 主菜/核心套餐靠近镜头 | 俯拍下压再轻推 | 手部摆盘、转盘或夹起 | 展示质感和卖点 |
+| 7-{st.session_state.t4_target_seconds}s | 满桌最终展示 | 轻微后拉定格 | 所有产品完整出现 | 给 agent 一个完整收尾画面 |
+
+# 4. 可直接复制给视频 Agent 的提示词
+生成一个 {st.session_state.t4_target_seconds} 秒竖屏短视频，场景是 {st.session_state.t4_scene}，产品是 {st.session_state.t4_prod}。使用手机手持美食/产品短视频运镜：低机位贴桌、前推、横扫、俯拍下压、结尾后拉满桌展示。产品分批从画外放入桌面，直接硬切，突出真实感和产品质感。不要复制参考视频原产品，不要出现平台 UI。
+
+[[EN]]
+# 1. Reference Video Camera Breakdown
+- Rhythm: short-video cuts, close to the subject, batch-by-batch entry, final full-table/product reveal.
+- Camera: low table-level push-in, side sweep, overhead press-in, final pull-back.
+
+# 2. Transferable Shooting Logic
+- Keep the handheld micro-shake and hard-cut rhythm.
+- Keep the way products enter the frame from outside in batches.
+- Do not copy the original product, original scene, or platform UI.
+
+# 3. Custom Shooting Storyboard
+| Time | Visual Content | Camera Movement | Action / Serving Rhythm | Shooting Focus |
+| :--- | :--- | :--- | :--- | :--- |
+| 0-2s | Empty or half-empty table, first main drink/product enters | Low table-level push-in | Hand places the first batch into frame | Establish scene and first hook |
+| 2-4s | Second batch of products fills the table | Side sweep | Items enter from left to right | Show the table becoming richer |
+| 4-7s | Core product/package moves close to camera | Overhead press-in, slight push | Hands adjust, plate, rotate, or lift product | Show texture and selling point |
+| 7-{st.session_state.t4_target_seconds}s | Final full-table/product reveal | Gentle pull-back and hold | All products are visible | Give the agent a complete closing shot |
+
+# 4. Copy-Ready Prompt for Video Agent
+Generate a {st.session_state.t4_target_seconds}-second vertical video in this scene: {st.session_state.t4_scene}. Product: {st.session_state.t4_prod}. Use handheld food/product short-video camera language: low table-level angle, push-in, side sweep, overhead press-in, final pull-back full reveal. Products enter the table in batches from outside the frame. Use direct hard cuts, real texture, and strong product presence. Do not copy the reference video's original product or platform UI."""
+                )
+            else:
+                response_script = call_llm(
+                    system_prompt_script,
+                    user_prompt_script,
+                    lambda: get_mock_video_script(t4_user_input, st.session_state.t4_prod, st.session_state.t4_price, watermark_phone, lagos_address)
+                )
             st.session_state.rebuilt_script = response_script
+            zh_script, en_script = split_bilingual_script(response_script)
+            if zh_script and not en_script:
+                en_script = call_llm(
+                    "Translate this markdown storyboard into English. Preserve all tables, timing, product names, prices, and numbers. Output only the translated content.",
+                    zh_script,
+                    lambda: ""
+                )
+            if en_script and not zh_script:
+                zh_script = call_llm(
+                    "Translate this markdown storyboard into Simplified Chinese. Preserve all tables, timing, product names, prices, and numbers. Output only the translated content.",
+                    en_script,
+                    lambda: ""
+                )
+            st.session_state.rebuilt_script_zh = zh_script
+            st.session_state.rebuilt_script_en = en_script
+            st.session_state.rebuilt_script = zh_script or en_script or response_script
+            st.session_state.t4_output_lang = "bilingual"
             
-            assistant_content = f"Here is the localized short video analysis and storyboard script for **{st.session_state.t4_prod}**.\n\n"
-            if status_info:
-                assistant_content += f"ℹ️ *System Status: {status_info}*\n\n"
-            assistant_content += "You can ask me to modify any part of it (e.g. 'translate to Pidgin', 'make the visual shots more dramatic', etc.)!" if sys_lang != "简体中文" else f"已为您生成 **{st.session_state.t4_prod}** 的西非本地化分镜与结构拆解。\n\nℹ️ *系统提示: {status_info}*\n\n您可以在下方直接向我发送调整指令进行修改！"
+            status_line = f"ℹ️ *{t4_ui['system_status']}: {status_info}*" if status_info else ""
+            assistant_content = t4_ui["generated_msg"].format(product=st.session_state.t4_prod, status=status_line)
             
             st.session_state.t4_chat_history = [
                 {
@@ -3856,17 +4352,34 @@ Please write the localized script storyboard based on the target product details
             st.rerun()
 
     # Show Output Results directly below on the same page
-    if st.session_state.rebuilt_script:
+    if st.session_state.rebuilt_script or st.session_state.rebuilt_script_zh or st.session_state.rebuilt_script_en:
         st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True)
         st.markdown("---")
         
         # 2. Localized Storyboard Script Table
-        st.markdown("### 🎬 " + ("本土化分镜脚本" if sys_lang == "简体中文" else "Localized Video Storyboard"), unsafe_allow_html=True)
-        st.markdown(st.session_state.rebuilt_script)
+        if st.session_state.get("t4_video_montage_b64"):
+            st.markdown("### 🧩 " + t4_ui["keyframes"], unsafe_allow_html=True)
+            st.image(st.session_state.t4_video_montage_b64, caption=t4_ui["keyframes_caption"])
+            visual_analysis = st.session_state.get("t4_video_analysis") or {}
+            if visual_analysis:
+                st.caption(
+                    f"Duration: {visual_analysis.get('duration')}s | "
+                    f"Estimated shots: {visual_analysis.get('estimated_shots')} | "
+                    f"Rhythm: {visual_analysis.get('rhythm')} | "
+                    f"Avg shot: {visual_analysis.get('avg_shot_len')}s"
+                )
+            st.markdown("---")
+        
+        st.markdown("### 🎬 " + t4_ui["storyboard"], unsafe_allow_html=True)
+        zh_tab, en_tab = st.tabs(["中文", "English"])
+        with zh_tab:
+            st.markdown(st.session_state.rebuilt_script_zh or st.session_state.rebuilt_script or "暂无中文版本")
+        with en_tab:
+            st.markdown(st.session_state.rebuilt_script_en or "No English version was parsed from the AI response.")
         
         # 3. Chat Feed Area
         st.markdown("---")
-        st.markdown("### 💬 " + ("AI 剧本协同设计助理" if sys_lang == "简体中文" else "AI Script Design Assistant"), unsafe_allow_html=True)
+        st.markdown("### 💬 " + t4_ui["assistant"], unsafe_allow_html=True)
         
         for msg in st.session_state.t4_chat_history:
             bubble_class = "chat-bubble-user" if msg["role"] == "user" else "chat-bubble-assistant"
@@ -3893,6 +4406,7 @@ Your goal:
 1. If the user wants to adjust the script (e.g. change language to Pidgin, change product, lower price, add hook, change CTA, etc.), update the markdown script table and return it at the BEGINNING of your response.
 2. Provide a short, energetic, friendly West African director explanation after the table.
 3. If they just ask questions, answer them in an energetic local director's voice.
+4. Output EVERYTHING in {output_language}. Do not mix languages.
 Always keep the script table strictly in markdown format."""
 
             followup_user_prompt = f"""
@@ -3901,9 +4415,9 @@ Current Script:
 
 User's Request: {user_query}
 """
-            with st.spinner("AI is thinking..." if sys_lang != "简体中文" else "AI 正在思考并调整剧本..."):
+            with st.spinner(t4_ui["thinking"]):
                 response = call_llm(
-                    followup_system_prompt.format(current_script=st.session_state.rebuilt_script),
+                    followup_system_prompt.format(current_script=st.session_state.rebuilt_script, output_language=t4_ui["output_language"]),
                     followup_user_prompt,
                     lambda: "Here is the updated script table based on your instruction:\n\n" + st.session_state.rebuilt_script + f"\n\nDirector: I have updated the script for you. Let's make it hit double sales!"
                 )
@@ -3926,6 +4440,8 @@ User's Request: {user_query}
                     
                     if len(table_lines) > 2:
                         st.session_state.rebuilt_script = "\n".join(table_lines)
+                        st.session_state.rebuilt_script_zh = st.session_state.rebuilt_script
+                        st.session_state.t4_output_lang = sys_lang
                         explanation = "\n".join(non_table_lines).strip()
                         
                 st.session_state.t4_chat_history.append({"role": "assistant", "content": explanation})
